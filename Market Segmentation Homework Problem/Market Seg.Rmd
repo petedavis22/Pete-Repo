@@ -1,0 +1,248 @@
+---
+title: "Market Segmentation Hw Problem"
+output:
+  md_document: default
+  html_document:
+    df_print: paged
+  github_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Question 4: Market Segmentation
+
+Problem
+
+This was data collected in the course of a market-research study using followers of the Twitter account of a large consumer brand that shall remain nameless---let's call it "NutrientH20" just to have a label. The goal here was for NutrientH20 to understand its social-media audience a little bit better, so that it could hone its messaging a little more sharply. Each row of social_marketing.csv represents one user, labeled by a random (anonymous, unique) 9-digit alphanumeric code. Each column represents an interest, which are labeled along the top of the data file. We had to analyze this data prepare a concise report for NutrientH20 that identifies any interesting market segments that appear to stand out in their social-media audience. 
+
+Step 1: We first loaded the data, scaled it, and took out some of the categories that would not benefit the analysis, such as chatter, uncategorized, spam, and adult.
+
+``` {r Loading and scaling the data}
+set.seed(123)
+
+
+library(ggplot2)
+library(LICORS)  # for kmeans++
+library(foreach)
+library(mosaic)
+library(cluster)
+
+mkt_seg = read.csv('social_marketing.csv', header=TRUE)
+
+#scales the data and takes out the first column with the id number, spam, chatter, uncategorized, and adult
+S = mkt_seg[,-c(1:2,6,36:37)]
+S = scale(S, center=TRUE, scale=TRUE)
+
+# Extract the centers and scales from the rescaled data (which are named attributes)
+mu = attr(S,"scaled:center")
+sigma = attr(S,"scaled:scale")
+
+```
+
+Step 2: To better understand the relationship categories, we created a correlation matrix, ordering the variables by hierarchical clustering. You can begin to see category clusters. For example, college uni, online_gaming, and sports_playing are highly correlated tweet categories, and one could deduce that this particular market segment could be college students.
+
+``` {r correlation matrix}
+##### PCA
+
+# looks a mess -- reorder the variables by hierarchical clustering
+ggcorrplot::ggcorrplot(cor(S), hc.order = TRUE)
+
+```
+Step 3: In order to perform a clustering analysis, we must first decide the number of clusters that we want to use. To do this, we ran an elbow plot. It is difficult to find the exact elbow of this plot, but we can estimate that it is around a k value of 5 0r 6. We will use 5 clusters because this will provide clearer insights for NutrientH20. 
+``` {r Elbow Plot to find Optimal number of clusters}
+#Elbow Method for finding the optimal number of clusters
+
+# Compute and plot wss for k = 2 to k = 15.
+
+### probably 5 or 6
+k.max <- 15
+wss <- sapply(1:k.max, 
+              function(k){kmeans(S, k, nstart=50,iter.max = 15 )$tot.withinss})
+wss
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+
+
+### gap statistic --> taking forever 
+users_gap = clusGap(S, FUN = kmeans, nstart = 50, K.max = 10, B = 100)
+plot(users_gap)
+
+
+```
+
+Step 4: We then ran K-means and K-means++ to segment the users into 5 clusters. Both methods resulted in the same within cluster sum of squares as well as between cluster sum of squares, so there is not a clear favorite between the two methods. We were able to take a look at the data archetype of each cluster, highlighting the average value for each category in the cluster. This gave us a sense of what type of users the clusters consisted of. Using this information as well as relationships defined from the correlation matrix, we constructed plots to make sure that plots with our defined cluster characteristics consist of mostly users in that cluster. For example, when we plotted travel and politics, cluster one made up a majority of the plot, and that is considered the cluster related to productive business personnel. Using this method for each cluster, we determined the market segmentation. 
+
+Cluster 1: Productive Business Personnel - Frequent Categories: travel, politics, computers
+Cluster 2: College Students - Frequent Categories: college_uni, online_gaming, sports_playing
+Cluster 3: Family/Friendly Adults - Frequent Categories: parenting, religion, sports_fandom, school, family
+Cluster 4: Fashion Enthusiasts - Frequent Categories: fashion, beauty, cooking
+Cluster 5: Physical Health Enthusiasts - Frequent Categories: personal_fitness, health_nutrition, outdoors
+
+``` {r KMEANS and KMEANS ++}
+# KMEANS
+
+
+# Run k-means with 6 clusters and 25 starts
+# 25 different random initializations 
+# picks the best of the 25 based on the SSEw
+clust1 = kmeans(S, 5, nstart=25)
+
+# What are the clusters?
+# summary of a type of tweet that occurs again and again and again (data archetype)
+clust1$center  # not super helpful
+clust1$center[1,]*sigma + mu
+clust1$center[2,]*sigma + mu
+clust1$center[3,]*sigma + mu
+clust1$center[4,]*sigma + mu
+clust1$center[5,]*sigma + mu
+
+# A few plots with cluster membership shown
+# qplot is in the ggplot2 library
+
+# cluster 1 --> business people , productive adults
+qplot(travel, politics, data=mkt_seg, color=factor(clust1$cluster))
+# cluster 2 --> college students
+qplot(college_uni, online_gaming, data=mkt_seg, color=factor(clust1$cluster))
+#cluster 3 --> wholesome adults
+qplot(parenting, religion, data=mkt_seg, color=factor(clust1$cluster))
+#cluster 4 --> those interested in fashion / beauty
+qplot(fashion, beauty, data=mkt_seg, color=factor(clust1$cluster))
+#cluster 5 --> those interested in fitness and nutrition
+qplot(personal_fitness, health_nutrition, data=mkt_seg, color=factor(clust1$cluster))
+
+
+# Which users are in which clusters?
+which(clust1$cluster == 1)
+which(clust1$cluster == 2)
+which(clust1$cluster == 3)
+which(clust1$cluster == 4)
+which(clust1$cluster == 5)
+
+
+
+
+# Using kmeans++ initialization
+clust2 = kmeanspp(S, k=5, nstart=25)
+
+clust2$center[1,]*sigma + mu
+clust2$center[2,]*sigma + mu
+clust2$center[4,]*sigma + mu
+
+# Which users are in which clusters?
+which(clust2$cluster == 1)
+which(clust2$cluster == 2)
+which(clust2$cluster == 3)
+
+# Compare versus within-cluster average distances from the first run
+
+# ordinary k means sum of squares for each cluster
+clust1$withinss
+# k means++ sum of squares for each cluster
+clust2$withinss
+# sum of each clusters SSE for k means
+sum(clust1$withinss)
+# sum of each clusters SSE for k means++ , it does only SLIGHTLY better
+sum(clust2$withinss)
+
+# this does the sums for you
+clust1$tot.withinss
+clust2$tot.withinss
+
+# the between cluster measures SSEb between cluster sum of squares
+clust1$betweenss
+clust2$betweenss
+
+
+#plot the clusters
+clusplot(clust1)
+
+```
+
+
+Step 5: We also performed hierarchical clustering to compare our findings with k-means. We cut the tree of at 5 clusters. After trying complete, single, and average linkage methods, the clusters were too skewed. Complete was the least skewed, but the distribution of users throughout the clusters was still disproportionately weighted toward cluster 1. Because of this, we are sticking with the results obtained from the k-means analysis. 
+
+``` {r Hierarchical Clustering stuff}
+
+
+
+
+## Now the market segment data
+mkt_seg = read.csv('social_marketing.csv', header=TRUE)
+
+
+
+#scales the data and takes out the first column with the id number
+S = mkt_seg[,-c(1:2,6,36:37)]
+S = scale(S, center=TRUE, scale=TRUE)
+
+# Extract the centers and scales from the rescaled data (which are named attributes)
+mu = attr(S,"scaled:center")
+sigma = attr(S,"scaled:scale")
+
+# First form a pairwise distance matrix
+distance_between_users = dist(S)
+
+# Now run hierarchical clustering
+h1 = hclust(distance_between_users, method='complete')
+
+# Cut the tree into 5 clusters
+hcluster1 = cutree(h1, k=5)
+summary(factor(hcluster1))
+
+
+# Plot the dendrogram
+plot(h1, cex=0.3)
+
+# Now run hierarchical clustering
+#### this is very skewed
+h2 = hclust(distance_between_users, method='single')
+
+# Cut the tree into 5 clusters
+hcluster2 = cutree(h2, k=5)
+summary(factor(hcluster2))
+
+
+# Plot the dendrogram
+plot(h2, cex=0.3)
+
+# Now run hierarchical clustering
+### this is also very skewed
+h3 = hclust(distance_between_users, method='average')
+
+# Cut the tree into 5 clusters
+hcluster3 = cutree(h3, k=5)
+summary(factor(hcluster3))
+
+
+# Plot the dendrogram
+plot(h3, cex=0.3)
+
+```
+
+
+``` {r view cluster characteristics for kmeans}
+
+```
+
+
+``` {r view cluster characteristics for hierarchical clustering}
+
+```
+
+
+Summary: 
+
+The correlation matrix gave us a relationships between category variables to look out for. The elbow plot helped us make a decision on the number of clusters. K-means and K-means++ gave us the same within sum of squares values and between sum of squares values. The summary of the scales and centers of each cluster from the K-means analysis gave us a sense of the categories that stood out within each cluster of users. With this information, we were able to plot categories of each cluster to confirm that it primarily consisted of the users we identified from the data archetype summaries. 
+
+We determined five key segments of the market that NutrientH20 can leverage to target their advertising strategies. These five segments are defined as follows:
+
+Cluster 1: Productive Business Personnel - Frequent Categories: travel, politics, computers
+Cluster 2: College Students - Frequent Categories: college_uni, online_gaming, sports_playing
+Cluster 3: Family/Friendly Adults - Frequent Categories: parenting, religion, sports_fandom, school, family
+Cluster 4: Fashion Enthusiasts - Frequent Categories: fashion, beauty, cooking
+Cluster 5: Physical Health Enthusiasts - Frequent Categories: personal_fitness, health_nutrition, outdoors
